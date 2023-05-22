@@ -1,30 +1,60 @@
+
+
+
 import numpy as np
 import torch
 from rocket import Rocket
-from policy import ActorCritic
+from TestNetwork import ActorCritic
 import matplotlib.pyplot as plt
 import utils
 import os
 import glob
+import time
+import datetime
 
 # Decide which device we want to run on
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-if __name__ == '__main__':
 
+
+def gen_episode(max_steps, environment, network):
+
+    rewards, log_probs, values, masks = [], [], [], []
+
+    state = env.reset() 
+    terminated = False
+    for step_id in range(max_steps):
+        
+        action, log_prob, value = net.get_action(state)
+        state, reward, terminated, _ = env.step(action) 
+        rewards.append(reward)
+        log_probs.append(log_prob)
+        values.append(value)
+        masks.append(1-terminated)
+
+        if terminated or step_id == max_steps-1:
+            _, _, Qval = net.get_action(state)
+            net.update_ac(net, action, state, rewards, log_probs, values, masks, Qval, gamma=0.999)
+            break
+    return rewards
+
+
+
+if __name__ == '__main__':
     task = 'hover'  # 'hover' or 'landing'
 
-    max_m_episode = 800000
+    max_m_episode = 200000
     max_steps = 800
 
     env = Rocket(task=task, max_steps=max_steps)
-    ckpt_folder = os.path.join('./', task + '_ckpt')
+
+    date = time.strftime("%Y-%m-%d", time.localtime())
+    ckpt_folder = os.path.join('./', task + '/' + date + '_ckpt')
     if not os.path.exists(ckpt_folder):
         os.mkdir(ckpt_folder)
 
     last_episode_id = 0
     REWARDS = []
-
     net = ActorCritic(input_dim=env.state_dims, output_dim=env.action_dims).to(device)
     if len(glob.glob(os.path.join(ckpt_folder, '*.pt'))) > 0:
         # load the last ckpt
@@ -33,25 +63,15 @@ if __name__ == '__main__':
         last_episode_id = checkpoint['episode_id']
         REWARDS = checkpoint['REWARDS']
 
+
     for episode_id in range(last_episode_id, max_m_episode):
 
         # training loop
         state = env.reset()
         rewards, log_probs, values, masks = [], [], [], []
-        for step_id in range(max_steps):
-            action, log_prob, value = net.get_action(state)
-            state, reward, done, _ = env.step(action)
-            rewards.append(reward)
-            log_probs.append(log_prob)
-            values.append(value)
-            masks.append(1-done)
-            if episode_id % 100 == 1:
-                env.render()
-
-            if done or step_id == max_steps-1:
-                _, _, Qval = net.get_action(state)
-                net.update_ac(net, action, rewards, log_probs, values, masks, Qval, gamma=0.999)
-                break
+        #actor_critic implementation:
+        net.critic_target.load_state_dict(net.critic.state_dict())
+        rewards = gen_episode(max_steps=max_steps, environment = env, network = net)
 
         REWARDS.append(np.sum(rewards))
         print('episode id: %d, episode reward: %.3f'
@@ -70,6 +90,4 @@ if __name__ == '__main__':
                         'REWARDS': REWARDS,
                         'model_G_state_dict': net.state_dict()},
                        os.path.join(ckpt_folder, 'ckpt_' + str(episode_id).zfill(8) + '.pt'))
-
-
 
