@@ -81,8 +81,8 @@ class ActorCritic(nn.Module):
 
         self.output_dim = output_dim
         self.softmax = nn.Softmax(dim=-1)
-        self.actor_optimizer = optim.RMSprop(self.actor.parameters(), lr=5e-5)
-        self.critic_optimizer = optim.RMSprop(self.critic.parameters(), lr=5e-5)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=3e-4)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=3e-4)
 
 
     def forward(self, x):
@@ -108,28 +108,100 @@ class ActorCritic(nn.Module):
             else:
                 action_id = np.random.choice(self.output_dim, p=np.squeeze(probs.detach().cpu().numpy()))
 
-        log_prob = torch.log(probs[action_id] + 1e-9)
+        # log_prob = torch.log(probs[action_id] + 1e-9)
 
-        return action_id, log_prob, value
+        return action_id, probs, value
 
-    
-    @staticmethod
-    def update_ac(network, actions, states, rewards, log_probs, values, masks, Qval, gamma=0.99):
+    def target_pred(self, state, deterministic=False, exploration=0.01):
 
-        # compute Q values
-        Qvals = calculate_returns(Qval.detach(), rewards, masks, gamma=gamma)
-        Qvals = torch.tensor(Qvals, dtype=torch.float32).to(device).detach()
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
 
-        log_probs = torch.stack(log_probs)
-        values = torch.stack(values)
-        # print('log probs:', log_probs)
-        # print('values:', values)
+        y = self.actor_target(state)
+        probs = self.softmax(y)
+        probs = probs[0, :]
 
-        action_tuple = torch.stack(actions)
-        state_tuple = torch.stack(states)
         
-        print('action_tuple', action_tuple)
-        print('state_tuple', state_tuple)
+        if deterministic:
+            action_id = np.argmax(np.squeeze(probs.detach().cpu().numpy()))
+        else:
+            if random.random() < exploration:  # exploration
+                action_id = random.randint(0, self.output_dim - 1)
+            else:
+                action_id = np.random.choice(self.output_dim, p=np.squeeze(probs.detach().cpu().numpy()))
+        # log_prob = torch.log(probs[action_id] + 1e-9)
+
+        return action_id, probs
+    
+    # @staticmethod
+    def update_ac(self, actions, states, rewards, probs, probs_target, values, masks, Qval, gamma=0.99):
+
+        # lmbda  = 0.99
+        eps_clip = 0.1
+        actor_loss = 0
+        critic_loss = 0
+        # GAE = 0
+        G = 0
+
+
+        Qvals = calculate_returns(Qval.detach(), rewards, masks, gamma=gamma)
+        Qvals = torch.tensor(Qvals, dtype=torch.float32).to(device).detach() #detach from computational graph because this shouldn't cause gradient flow
+        # print("Qvals:", Qvals)
+
+        # print("values:", values)
+
+        
+        values = torch.stack(values)
+        # values.requires_grad_()
+        # values = torch.tensor([val.item() for val in values])
+        # print("values after torch stack:", values)
+
+        advantage = Qvals - values #broadcasting happens here
+        # print("advantage:", advantage)
+        # print("states len:", len(states))
+        # print("advantage len:", len(advantage))
+        # print("first adv len:", len(advantage[0]))
+
+
+
+        for t in range(len(states) - 2, -1, -1):
+            S = states[t]
+            A = actions[t]
+            # R = rewards[t]
+            S_next = states[t+1]
+            
+            S=torch.FloatTensor(S)
+            A=torch.tensor(A, dtype=torch.int8)
+            S_next=torch.FloatTensor(S_next)
+            
+            # with torch.no_grad():
+            #     delta = R + gamma*self.critic(S_next)-probs[t]
+            #     GAE = gamma * lmbda * GAE + delta           
+            #     G = gamma * G + R
+            
+            ratio = probs[t][A]/probs_target[t][A]
+            # print(advantage[t])
+            surr1 = ratio * (gamma**t)* advantage[t][t]
+            surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * (gamma**t)* advantage[t][t]
+            actor_loss = actor_loss - torch.min(surr1, surr2)
+        
+        # print(actor_loss)
+        critic_loss = 0.5 * advantage.pow(2).mean()
+        
+            
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward(retain_graph=True)
+        self.actor_optimizer.step()
+        
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step() 
+        # compute Q values
+        # Qvals = calculate_returns(Qval.detach(), rewards, masks, gamma=gamma)
+        # Qvals = torch.tensor(Qvals, dtype=torch.float32).to(device).detach()
+
+        # log_probs = torch.stack(log_probs)
+        # values = torch.stack(values)
+        
         
 
         # advantage = Qvals - values
@@ -140,30 +212,6 @@ class ActorCritic(nn.Module):
         # network.optimizer.zero_grad()
         # ac_loss.backward()
         # network.optimizer.step()
-
-        # with torch.no_grad():
-        #     delta = R + gamma*network.actor(S_next)-network.actor(S)
-        #     GAE = gamma * lmbda * GAE + delta             
-        #     G = gamma * G + R
-        advantage = Qvals - values
-        critic_loss = 0.5 * advantage.pow(2).mean()
-            
-        eps_clip = 0.1
-        ratio = network.actor(state_tuple)[action_tuple]/network.actor_target(state_tuple)[action_tuple]
-        surr1 = ratio * advantage
-        surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage 
-        actor_loss = actor_loss - torch.min(surr1, surr2)
-        actor_loss = actor_loss.mean()
-
-
-        network.critic_optimizer.zero_grad()
-        critic_loss.step()
-        network.critic_optimizer.step()
-
-        network.actor_optimizer.zero_grad()
-        actor_loss.step()
-        network.actor_optimizer.step()
-
 
 
     
