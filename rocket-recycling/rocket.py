@@ -270,44 +270,44 @@ class Rocket(object):
              state['phi']]
         return np.array(x, dtype=np.float32)/100.
 
-    def render(self, window_name='env', wait_time=1,
-               with_trajectory=True, with_camera_tracking=True,
-               crop_scale=0.4):
+    # def render(self, window_name='env', wait_time=1,
+    #            with_trajectory=True, with_camera_tracking=True,
+    #            crop_scale=0.4):
 
-        canvas = np.copy(self.bg_img)
-        polys = self.create_polygons()
+    #     canvas = np.copy(self.bg_img)
+    #     polys = self.create_polygons()
 
-        # draw target region
-        for poly in polys['target_region']:
-            self.draw_a_polygon(canvas, poly)
-        # draw rocket
-        for poly in polys['rocket']:
-            self.draw_a_polygon(canvas, poly)
-        frame_0 = canvas.copy()
+    #     # draw target region
+    #     for poly in polys['target_region']:
+    #         self.draw_a_polygon(canvas, poly)
+    #     # draw rocket
+    #     for poly in polys['rocket']:
+    #         self.draw_a_polygon(canvas, poly)
+    #     frame_0 = canvas.copy()
 
-        # draw engine work
-        for poly in polys['engine_work']:
-            self.draw_a_polygon(canvas, poly)
-        frame_1 = canvas.copy()
+    #     # draw engine work
+    #     for poly in polys['engine_work']:
+    #         self.draw_a_polygon(canvas, poly)
+    #     frame_1 = canvas.copy()
 
-        if with_camera_tracking:
-            frame_0 = self.crop_alongwith_camera(frame_0, crop_scale=crop_scale)
-            frame_1 = self.crop_alongwith_camera(frame_1, crop_scale=crop_scale)
+    #     if with_camera_tracking:
+    #         frame_0 = self.crop_alongwith_camera(frame_0, crop_scale=crop_scale)
+    #         frame_1 = self.crop_alongwith_camera(frame_1, crop_scale=crop_scale)
 
-        # draw trajectory
-        if with_trajectory:
-            self.draw_trajectory(frame_0)
-            self.draw_trajectory(frame_1)
+    #     # draw trajectory
+    #     if with_trajectory:
+    #         self.draw_trajectory(frame_0)
+    #         self.draw_trajectory(frame_1)
 
-        # draw text
-        self.draw_text(frame_0, color=(0, 0, 0))
-        self.draw_text(frame_1, color=(0, 0, 0))
+    #     # draw text
+    #     self.draw_text(frame_0, color=(0, 0, 0))
+    #     self.draw_text(frame_1, color=(0, 0, 0))
 
-        cv2.imshow(window_name, frame_0[:,:,::-1])
-        cv2.waitKey(wait_time)
-        cv2.imshow(window_name, frame_1[:,:,::-1])
-        cv2.waitKey(wait_time)
-        return frame_0, frame_1
+    #     cv2.imshow(window_name, frame_0[:,:,::-1])
+    #     cv2.waitKey(wait_time)
+    #     cv2.imshow(window_name, frame_1[:,:,::-1])
+    #     cv2.waitKey(wait_time)
+    #     return frame_0, frame_1
 
     def create_polygons(self):
 

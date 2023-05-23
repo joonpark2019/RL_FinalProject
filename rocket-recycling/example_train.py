@@ -45,12 +45,12 @@ if __name__ == '__main__':
             log_probs.append(log_prob)
             values.append(value)
             masks.append(1-done)
-            if episode_id % 100 == 1:
-                env.render()
+            # if episode_id % 100 == 1:
+            #     env.render()
 
             if done or step_id == max_steps-1:
                 _, _, Qval = net.get_action(state)
-                net.update_ac(net, action, rewards, log_probs, values, masks, Qval, gamma=0.999)
+                net.update_ac(net, rewards, log_probs, values, masks, Qval, gamma=0.999)
                 break
 
         REWARDS.append(np.sum(rewards))

@@ -74,9 +74,10 @@ class NetworkBase(nn.Module):
 
 class ActorCritic(nn.Module):
     def __init__(self, input_dim, output_dim):
+        super(ActorCritic, self).__init__()
         self.actor = NetworkBase(input_dim, output_dim)
         self.critic = NetworkBase(input_dim, 1)
-        self.critic_target = NetworkBase(input_dim, 1)
+        self.actor_target = NetworkBase(input_dim, output_dim)
 
         self.output_dim = output_dim
         self.softmax = nn.Softmax(dim=-1)
@@ -113,7 +114,7 @@ class ActorCritic(nn.Module):
 
     
     @staticmethod
-    def update_ac(network, action, state, rewards, log_probs, values, masks, Qval, gamma=0.99):
+    def update_ac(network, actions, states, rewards, log_probs, values, masks, Qval, gamma=0.99):
 
         # compute Q values
         Qvals = calculate_returns(Qval.detach(), rewards, masks, gamma=gamma)
@@ -121,6 +122,15 @@ class ActorCritic(nn.Module):
 
         log_probs = torch.stack(log_probs)
         values = torch.stack(values)
+        # print('log probs:', log_probs)
+        # print('values:', values)
+
+        action_tuple = torch.stack(actions)
+        state_tuple = torch.stack(states)
+        
+        print('action_tuple', action_tuple)
+        print('state_tuple', state_tuple)
+        
 
         # advantage = Qvals - values
         # actor_loss = (-log_probs * advantage.detach()).mean()
@@ -139,19 +149,21 @@ class ActorCritic(nn.Module):
         critic_loss = 0.5 * advantage.pow(2).mean()
             
         eps_clip = 0.1
-        ratio = network.critic(state)[action]/network.critic_target(state)[action]
+        ratio = network.actor(state_tuple)[action_tuple]/network.actor_target(state_tuple)[action_tuple]
         surr1 = ratio * advantage
         surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage 
         actor_loss = actor_loss - torch.min(surr1, surr2)
         actor_loss = actor_loss.mean()
 
-        network.actor_optimizer.zero_grad()
-        actor_loss.step()
-        network.actor_optimizer.step()
 
         network.critic_optimizer.zero_grad()
         critic_loss.step()
         network.critic_optimizer.step()
+
+        network.actor_optimizer.zero_grad()
+        actor_loss.step()
+        network.actor_optimizer.step()
+
 
 
     

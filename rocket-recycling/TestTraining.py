@@ -19,24 +19,34 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def gen_episode(max_steps, environment, network):
 
-    rewards, log_probs, values, masks = [], [], [], []
+    # rewards, log_probs, values, masks = [], [], [], []
+    states = []
+    actions = []
+    rewards = []
+    terminated = False
 
     state = env.reset() 
     terminated = False
     for step_id in range(max_steps):
         
         action, log_prob, value = net.get_action(state)
-        state, reward, terminated, _ = env.step(action) 
-        rewards.append(reward)
+        state, reward, terminated, _ = environment.step(action) 
+    
+        # rewards.append(reward)
         log_probs.append(log_prob)
         values.append(value)
         masks.append(1-terminated)
+        states.append(torch.FloatTensor(state))
+        rewards.append(reward)
+        actions.append(torch.FloatTensor(action))
+
+        
 
         if terminated or step_id == max_steps-1:
-            _, _, Qval = net.get_action(state)
-            net.update_ac(net, action, state, rewards, log_probs, values, masks, Qval, gamma=0.999)
+            _, _, Qval = network.get_action(state)
+            network.update_ac(network, actions, states, rewards, log_probs, values, masks, Qval, gamma=0.999)
             break
-    return rewards
+    return states, actions, rewards
 
 
 
@@ -55,7 +65,7 @@ if __name__ == '__main__':
 
     last_episode_id = 0
     REWARDS = []
-    net = ActorCritic(input_dim=env.state_dims, output_dim=env.action_dims).to(device)
+    net = ActorCritic(input_dim = env.state_dims, output_dim = env.action_dims).to(device)
     if len(glob.glob(os.path.join(ckpt_folder, '*.pt'))) > 0:
         # load the last ckpt
         checkpoint = torch.load(glob.glob(os.path.join(ckpt_folder, '*.pt'))[-1])
@@ -70,8 +80,8 @@ if __name__ == '__main__':
         state = env.reset()
         rewards, log_probs, values, masks = [], [], [], []
         #actor_critic implementation:
-        net.critic_target.load_state_dict(net.critic.state_dict())
-        rewards = gen_episode(max_steps=max_steps, environment = env, network = net)
+        net.actor_target.load_state_dict(net.actor.state_dict())
+        states, actions, rewards = gen_episode(max_steps=max_steps, environment = env, network = net)
 
         REWARDS.append(np.sum(rewards))
         print('episode id: %d, episode reward: %.3f'
