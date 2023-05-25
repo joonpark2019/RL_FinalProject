@@ -1,0 +1,1 @@
+scp -r /Users/joonpark/Desktop/KAIST_Y4S2/강화학습개론/RL_FinalProject joon@143.248.231.147:/home/joon/joon_ws
