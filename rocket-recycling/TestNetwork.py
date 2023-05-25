@@ -81,8 +81,8 @@ class ActorCritic(nn.Module):
 
         self.output_dim = output_dim
         self.softmax = nn.Softmax(dim=-1)
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=3e-4)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=3e-4)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=5e-5)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=5e-5)
 
 
     def forward(self, x):
@@ -93,26 +93,19 @@ class ActorCritic(nn.Module):
 
         return probs, value
     
-    def get_action(self, state, deterministic=False, exploration=0.01):
+    def get_action(self, state):
 
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
         probs, value = self.forward(state)
         probs = probs[0, :]
         value = value[0]
 
-        if deterministic:
-            action_id = np.argmax(np.squeeze(probs.detach().cpu().numpy()))
-        else:
-            if random.random() < exploration:  # exploration
-                action_id = random.randint(0, self.output_dim - 1)
-            else:
-                action_id = np.random.choice(self.output_dim, p=np.squeeze(probs.detach().cpu().numpy()))
-
+        action_id = torch.multinomial(probs, 1).item()
         # log_prob = torch.log(probs[action_id] + 1e-9)
 
         return action_id, probs, value
 
-    def target_pred(self, state, deterministic=False, exploration=0.01):
+    def target_pred(self, state):
 
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
 
@@ -120,14 +113,15 @@ class ActorCritic(nn.Module):
         probs = self.softmax(y)
         probs = probs[0, :]
 
+        action_id = torch.multinomial(probs, 1).item()
         
-        if deterministic:
-            action_id = np.argmax(np.squeeze(probs.detach().cpu().numpy()))
-        else:
-            if random.random() < exploration:  # exploration
-                action_id = random.randint(0, self.output_dim - 1)
-            else:
-                action_id = np.random.choice(self.output_dim, p=np.squeeze(probs.detach().cpu().numpy()))
+        # if deterministic:
+        #     action_id = np.argmax(np.squeeze(probs.detach().cpu().numpy()))
+        # else:
+        #     if random.random() < exploration:  # exploration
+        #         action_id = random.randint(0, self.output_dim - 1)
+        #     else:
+        #         action_id = np.random.choice(self.output_dim, p=np.squeeze(probs.detach().cpu().numpy()))
         # log_prob = torch.log(probs[action_id] + 1e-9)
 
         return action_id, probs
@@ -135,27 +129,20 @@ class ActorCritic(nn.Module):
     # @staticmethod
     def update_ac(self, actions, states, rewards, probs, probs_target, values, masks, Qval, gamma=0.99):
 
-        # lmbda  = 0.99
+        lmbda  = 0.99
         eps_clip = 0.1
         actor_loss = 0
         critic_loss = 0
-        # GAE = 0
+        GAE = 0
         G = 0
 
 
-        Qvals = calculate_returns(Qval.detach(), rewards, masks, gamma=gamma)
-        Qvals = torch.tensor(Qvals, dtype=torch.float32).to(device).detach() #detach from computational graph because this shouldn't cause gradient flow
-        # print("Qvals:", Qvals)
+        # Qvals = calculate_returns(Qval.detach(), rewards, masks, gamma=gamma)
+        # Qvals = torch.tensor(Qvals, dtype=torch.float32).to(device).detach() #detach from computational graph because this shouldn't cause gradient flow
 
-        # print("values:", values)
-
+        # values = torch.stack(values)
         
-        values = torch.stack(values)
-        # values.requires_grad_()
-        # values = torch.tensor([val.item() for val in values])
-        # print("values after torch stack:", values)
-
-        advantage = Qvals - values #broadcasting happens here
+        # advantage = Qvals - values #broadcasting happens here
         # print("advantage:", advantage)
         # print("states len:", len(states))
         # print("advantage len:", len(advantage))
@@ -166,30 +153,43 @@ class ActorCritic(nn.Module):
         for t in range(len(states) - 2, -1, -1):
             S = states[t]
             A = actions[t]
-            # R = rewards[t]
+            R = rewards[t]
             S_next = states[t+1]
             
-            S=torch.FloatTensor(S)
-            A=torch.tensor(A, dtype=torch.int8)
-            S_next=torch.FloatTensor(S_next)
+            S=torch.FloatTensor(S).to(device)
+            A=torch.tensor(A, dtype=torch.int8).to(device)
+            S_next=torch.FloatTensor(S_next).to(device)
             
-            # with torch.no_grad():
-            #     delta = R + gamma*self.critic(S_next)-probs[t]
-            #     GAE = gamma * lmbda * GAE + delta           
-            #     G = gamma * G + R
+            with torch.no_grad():
+                delta = R + gamma*self.critic(S_next)-self.critic(S)
+                GAE = gamma * lmbda * GAE + delta           
+                G = gamma * G + R
+
+
+            actor_output = self.actor(S)
+            actor_target_output = self.actor_target(S)
+            # print("actor_out:", actor_output)
+            # print("actor_target_output:", actor_target_output)
+
+
+                # Move both tensors to the same device
+            actor_output = actor_output.to(device)
+            actor_target_output = actor_target_output.to(device)
             
-            ratio = probs[t][A]/probs_target[t][A]
+            ratio = torch.abs(actor_output[0][A]) / torch.abs(actor_target_output[0][A])
+            # print(ratio)
             # print(advantage[t])
-            surr1 = ratio * (gamma**t)* advantage[t][t]
-            surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * (gamma**t)* advantage[t][t]
+            surr1 = ratio * (gamma**t)* GAE
+            surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * (gamma**t)* GAE
             actor_loss = actor_loss - torch.min(surr1, surr2)
+            critic_loss += (G - self.critic(S))**2
         
         # print(actor_loss)
-        critic_loss = 0.5 * advantage.pow(2).mean()
+        # critic_loss = 0.5 * advantage.pow(2).mean()
         
             
         self.actor_optimizer.zero_grad()
-        actor_loss.backward(retain_graph=True)
+        actor_loss.backward()
         self.actor_optimizer.step()
         
         self.critic_optimizer.zero_grad()
