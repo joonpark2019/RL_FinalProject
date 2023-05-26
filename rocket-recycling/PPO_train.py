@@ -64,9 +64,8 @@ if __name__ == '__main__':
     V = VNetwork()
     V_optimizer = torch.optim.Adam(V.parameters(), lr=alpha)  
 
-    if torch.cuda.is_available():
-        V = V.cuda()
-        pi = pi.cuda()
+    V = V.to(device)
+    pi = pi.to(device)
     
     env = Rocket(task=task, max_steps=max_steps)
     ckpt_folder = os.path.join('./', task + '_ckpt')
@@ -105,9 +104,9 @@ if __name__ == '__main__':
                 R = rewards[t]
                 S_next = states[t+1]
                 
-                S=torch.FloatTensor(S)
-                A=torch.tensor(A, dtype=torch.int8)
-                S_next=torch.FloatTensor(S_next)
+                S=torch.FloatTensor(S).to(device)
+                A=torch.tensor(A, dtype=torch.int8).to(device)
+                S_next=torch.FloatTensor(S_next).to(device)
                 
                 with torch.no_grad():
                     delta = R + gamma*V(S_next)-V(S)
@@ -134,7 +133,7 @@ if __name__ == '__main__':
         # reward_history_100.append(G)
         # avg = sum(reward_history_100) / len(reward_history_100)
 
-        if episode % 100 == 1:
+        if episode % 10 == 1:
             print('episode id: %d, episode reward: %.3f'
                 % (episode, np.sum(rewards)))
             plt.figure()

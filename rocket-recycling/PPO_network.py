@@ -17,7 +17,7 @@ class VNetwork(torch.nn.Module):
         x = self.fcV1(x)
         x = torch.nn.functional.relu(x)
         x = self.fcV2(x)
-        x = torch.nn.sfunctional.relu(x)
+        x = torch.nn.functional.relu(x)
         x = self.fcV3(x)
         return x
     
