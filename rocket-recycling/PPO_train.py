@@ -16,7 +16,7 @@ from collections import deque
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def gen_episode(environment):
+def gen_episode(environment, policy_target, device):
     states = []
     actions = []
     rewards = []
@@ -25,7 +25,7 @@ def gen_episode(environment):
     terminated = False
 
     while True:
-        probs_target = pi_target(torch.FloatTensor(state))
+        probs_target = policy_target(torch.FloatTensor(state).to(device))
         action = torch.multinomial(probs_target, 1).item()
         
         next_state, reward, terminated, _ = environment.step(action) 
@@ -40,34 +40,39 @@ def gen_episode(environment):
         state = next_state
     return states, actions, rewards
 
+
 if __name__ == '__main__':
     
     task = 'hover'  # 'hover' or 'landing'
-    version = 2
+    version = 3
 
     max_m_episode = 200000
     max_steps = 800
      #network and optimizer
 
     #hyperparameters:
-    alpha = 0.001
+    alpha = 2.5e-4
     gamma = 0.99
     lmbda         = 0.99
     eps_clip      = 0.1
     K_epoch       = 4
 
-    #create networks:
-    pi = PolicyNetwork()
-    pi_optimizer = torch.optim.Adam(pi.parameters(), lr=alpha)
-    pi_target = PolicyNetwork()
+    env = Rocket(task=task, max_steps=max_steps)
 
-    V = VNetwork()
+
+    #create networks:
+    pi = PolicyNetwork(env.state_dims, env.action_dims)
+    pi_optimizer = torch.optim.Adam(pi.parameters(), lr=alpha)
+    pi_target = PolicyNetwork(env.state_dims, env.action_dims)
+
+    V = VNetwork(env.state_dims)
     V_optimizer = torch.optim.Adam(V.parameters(), lr=alpha)  
 
     V = V.to(device)
     pi = pi.to(device)
+    pi_target = pi_target.to(device)
+
     
-    env = Rocket(task=task, max_steps=max_steps)
     ckpt_folder = os.path.join('./', task + '_ckpt')
     if not os.path.exists(ckpt_folder):
         os.mkdir(ckpt_folder)
@@ -90,7 +95,7 @@ if __name__ == '__main__':
     while episode < MAX_EPISODES:  # episode loop
         
         pi_target.load_state_dict(pi.state_dict())
-        states, actions, rewards = gen_episode(env)
+        states, actions, rewards = gen_episode(env, pi_target, device)
             
         episode += 1    
         for k in range(1,K_epoch):
@@ -112,8 +117,19 @@ if __name__ == '__main__':
                     delta = R + gamma*V(S_next)-V(S)
                     GAE = gamma * lmbda * GAE + delta           
                     G = gamma * G + R
+
+                # actor_output = pi(S)[A]
+                # actor_target_output = pi_target(S)[A]
+
+                actor_output = pi(S)
+                actor_target_output = pi_target(S)
+                actor_output = actor_output.view(-1).to(device)
+                actor_target_output = actor_target_output.view(-1).to(device)
+
                 
-                ratio = pi(S)[A]/pi_target(S)[A]
+                
+                # ratio = pi(S)[A]/pi_target(S)[A]
+                ratio = actor_output[A] / actor_target_output[A]
                 # print("ratio:", ratio)
                 surr1 = ratio * (gamma**t)* GAE
                 surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * (gamma**t)* GAE 
