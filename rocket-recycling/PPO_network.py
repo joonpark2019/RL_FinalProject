@@ -71,6 +71,10 @@ class PositionalMapping(nn.Module):
 
         return torch.cat(h, dim=-1) / self.scale
 
+# Based on the code from https://iclr-blog-track.github.io/2022/03/25/ppo-implementation-details/
+# Network architecture and hyperparameters are based on : https://arxiv.org/pdf/2006.05990.pdf
+# The code below is taken from: https://github.com/huggingface/deep-rl-class/blob/main/notebooks/unit8/unit8_part1.ipynb
+
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)

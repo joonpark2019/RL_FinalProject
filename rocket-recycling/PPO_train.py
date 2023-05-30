@@ -16,7 +16,7 @@ from collections import deque
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def gen_episode(environment, policy_target, device):
+def gen_episode(environment, policy_target, device, max_step = 800):
     states = []
     actions = []
     rewards = []
@@ -24,7 +24,7 @@ def gen_episode(environment, policy_target, device):
     state = environment.reset() 
     terminated = False
 
-    while True:
+    for step in range(max_step):
         probs_target = policy_target(torch.FloatTensor(state).to(device))
         action = torch.multinomial(probs_target, 1).item()
         
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     while episode < MAX_EPISODES:  # episode loop
         
         pi_target.load_state_dict(pi.state_dict())
-        states, actions, rewards = gen_episode(env, pi_target, device)
+        states, actions, rewards = gen_episode(env, pi_target, device, max_steps)
             
         episode += 1    
         for k in range(1,K_epoch):
@@ -145,18 +145,18 @@ if __name__ == '__main__':
             loss2.backward()
             V_optimizer.step() 
     
-        reward_history.append(np.sum(rewards))
+        reward_history.append(G)
         # reward_history_100.append(G)
         # avg = sum(reward_history_100) / len(reward_history_100)
 
         if episode % 10 == 1:
-            print('episode id: %d, episode reward: %.3f'
-                % (episode, np.sum(rewards)))
+            print('episode id: %d, episode return: %.3f'
+                % (episode, G))
             plt.figure()
             plt.plot(reward_history), plt.plot(utils.moving_avg(reward_history, N=50))
             plt.legend(['episode reward', 'moving avg'], loc=2)
             plt.xlabel('m episode')
-            plt.ylabel('reward')
+            plt.ylabel('return')
             plt.savefig(os.path.join(ckpt_folder, 'rewards_' + str(version).zfill(8) + '.jpg'))
             plt.close()
 
