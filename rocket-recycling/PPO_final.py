@@ -14,6 +14,15 @@ import torch.optim as optim
 
 import torch.nn as nn
 
+from typing import Any
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--resume", type=str, default=None,
+    help="resume with existing checkpoint")
+
+settings = parser.parse_args()
+
 # Decide which device we want to run on
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -76,7 +85,6 @@ class VNetwork(nn.Module):
         x = self.critic(x)
         return x
 
-
 class PolicyNetwork(torch.nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
@@ -121,6 +129,9 @@ def gen_episode(environment, policy_target, device, max_step = 800):
         state = next_state
     return states, actions, rewards
 
+
+
+
 task = 'hover'  # 'hover' or 'landing'
 version = 5
 
@@ -138,7 +149,7 @@ K_epoch       = 4
 env = Rocket(task=task, max_steps=max_steps)
 
 
-    #create networks:
+#create networks:
 pi = PolicyNetwork(env.state_dims, env.action_dims)
 pi_optimizer = torch.optim.Adam(pi.parameters(), lr=alpha)
 pi_target = PolicyNetwork(env.state_dims, env.action_dims)
@@ -150,19 +161,39 @@ V = V.to(device)
 pi = pi.to(device)
 pi_target = pi_target.to(device)
 
-    
-ckpt_folder = os.path.join('./', task + '_ckpt')
-if not os.path.exists(ckpt_folder):
-    os.mkdir(ckpt_folder)
-
-
 episode = 0
 MAX_EPISODES = 20000
 reward_history =[]
 reward_history_100 = deque(maxlen=100)
 
+# resume 시키려면 
+if settings.resume:
+    resume_episode_id = -1
+    
+    if settings.resume is not None and os.path.isfile(settings.resume) and os.path.exists(settings.resume):
+        resume_ckpt = settings.resume
+        state_dict = torch.load(resume_ckpt, map_location=torch.device(device))      # loaded model
+        resume_episode_id = state_dict['episode_id']
+        pi.load_state_dict(state_dict['model_pi_state_dict'])
+        V.load_state_dict(state_dict['model_V_state_dict'])
+        if state_dict['model_pi_optimizer'] is not None:
+            pi_optimizer.load_state_dict(state_dict['model_pi_optimizer'])
+        if state_dict['model_V_optimizer'] is not None:
+            V_optimizer.load_state_dict(state_dict['model_V_optimizer'])
+
+        print("Resuming training with checkpoint: {} from episode {}".format(resume_ckpt, resume_episode_id))
+
+        # set parameters
+        episode = 0 if resume_episode_id < 0 else (resume_episode_id + 1)
+        reward_history = state_dict['REWARDS']
+    
+# 저장시킬 ckpt folder
+ckpt_folder = os.path.join('./', task + '_ckpt')
+if not os.path.exists(ckpt_folder):
+    os.mkdir(ckpt_folder)
+
+
 while episode < MAX_EPISODES:  # episode loop
-        
     pi_target.load_state_dict(pi.state_dict())
     states, actions, rewards = gen_episode(env, pi_target, device, max_steps)
             
@@ -213,7 +244,6 @@ while episode < MAX_EPISODES:  # episode loop
         V_optimizer.step() 
     
     reward_history.append(G)
-        
 
     if episode % 10 == 1:
         print('episode id: %d, episode return: %.3f'
@@ -229,5 +259,7 @@ while episode < MAX_EPISODES:  # episode loop
         torch.save({'episode_id': episode,
                             'REWARDS': reward_history,
                             'model_pi_state_dict': pi.state_dict(),
-                            'model_V_state_dict': V.state_dict()},
+                            'model_V_state_dict': V.state_dict(),
+                            'model_pi_optimizer': pi_optimizer.state_dict(),
+                            'model_V_optimizer': V_optimizer.state_dict()},
                            os.path.join(ckpt_folder, 'ckpt_' + str(version).zfill(8) + '.pt'))
