@@ -177,7 +177,7 @@ mini_batch_size = 64
 env = Rocket(task=task, max_steps=max_steps)
 
 
-    #create networks:
+#create networks:
 pi = PolicyNetwork(env.state_dims, env.action_dims)
 pi_optimizer = torch.optim.Adam(pi.parameters(), lr=alpha)
 pi_target = PolicyNetwork(env.state_dims, env.action_dims)
@@ -186,8 +186,8 @@ V = VNetwork(env.state_dims)
 V_optimizer = torch.optim.Adam(V.parameters(), lr=alpha)  
 
 parameters = list(pi.parameters()) + list(V.parameters())
-optimizer = torch.optim.Adam(parameters, lr=alpha)
-
+total_params = nn.ParameterList(parameters=parameters)
+optimizer = torch.optim.Adam(total_params, lr=alpha)
 
 V = V.to(device)
 pi = pi.to(device)
@@ -281,32 +281,31 @@ while episode < MAX_EPISODES:  # episode loop
             
     reward_history.append(G)                
         
-    if episode % 1000 == 1:
+    if episode % 20 == 1:
         print('episode id: %d, episode return: %.3f'
                 % (episode, G))
-        plt.figure()
-        plt.plot(reward_history), plt.plot(utils.moving_avg(reward_history, N=50))
-        plt.legend(['episode reward', 'moving avg'], loc=2)
-        plt.xlabel('m episode')
-        plt.ylabel('return')
-        plt.savefig(os.path.join(ckpt_folder, 'rewards_' + str(version).zfill(8) + '.jpg'))
-        plt.close()
+        if episode % 1000 == 1:
+            plt.figure()
+            plt.plot(reward_history), plt.plot(utils.moving_avg(reward_history, N=50))
+            plt.legend(['episode reward', 'moving avg'], loc=2)
+            plt.xlabel('m episode')
+            plt.ylabel('return')
+            plt.savefig(os.path.join(ckpt_folder, 'rewards_' + str(version).zfill(8) + '.jpg'))
+            plt.close()
 
     if episode % 50 == 1:
         torch.save({'episode_id': episode,
                             'REWARDS': reward_history,
                             'model_pi_state_dict': pi.state_dict(),
                             'model_V_state_dict': V.state_dict(),
-                            'model_pi_optimizer': pi_optimizer.state_dict(),
-                            'model_V_optimizer': V_optimizer.state_dict()},
-                           os.path.join(ckpt_folder, 'ckpt_' + str(version).zfill(8) + '.pt'))
+                            'optimizer': optimizer.state_dict()},
+                            os.path.join(ckpt_folder, 'ckpt_' + str(version).zfill(8) + '.pt'))
     
     if episode % SAVE_INTERVAL == 0:
         torch.save({'episode_id': episode,
                             'REWARDS': reward_history,
                             'model_pi_state_dict': pi.state_dict(),
                             'model_V_state_dict': V.state_dict(),
-                            'model_pi_optimizer': pi_optimizer.state_dict(),
-                            'model_V_optimizer': V_optimizer.state_dict()},
+                            'optimizer': optimizer.state_dict()},
                             os.path.join(ckpt_folder, 'ckpt_' + str(SAVE_INTERVAL).zfill(8) + '.pt'))
 
