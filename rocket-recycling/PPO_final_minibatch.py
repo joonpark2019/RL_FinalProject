@@ -12,7 +12,7 @@ import time
 import datetime
 from collections import deque
 import torch.optim as optim
-
+import random
 import torch.nn as nn
 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # this line was added to avoid kernel error within my environment
@@ -20,7 +20,6 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # this line was added to avoid kernel 
 
 # Decide which device we want to run on
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 
 class PositionalMapping(nn.Module):
     """
@@ -117,55 +116,39 @@ class PolicyNetwork(torch.nn.Module):
         x = torch.nn.functional.softmax(x, dim=-1)
         return x
 
-# class PPOAgent(torch.nn.Module):
-#     def __init__():
-#         super().__init__()
-#         self.lr = 2.5e-4
-#         self.gamma = 0.99
-#         self.lmbda         = 0.99
-#         self.eps_clip      = 0.1
-#         self.K_epoch       = 4
-#         self.batch_size    = 64
-#         self.policy_net = PolicyNetwork()
-#         self.policy_target = PolicyNetwork()
-#         self.policy_target.load_state_dict(self.policy.parameters())
-#         self.value_net = VNetwork()
-        
-    
-
-
 def gen_episode(environment, policy_target, device, max_step = 800):
     states = []
     actions = []
     rewards = []
     ratios = []
-    state = environment.reset() 
+    state = environment.reset()
     terminated = False
-
+    eps = 0.01
     for step in range(max_step):
         probs_target = policy_target(torch.FloatTensor(state).to(device))
-        action = torch.multinomial(probs_target, 1).item()
-        
-        next_state, reward, terminated, _ = environment.step(action) 
+        if random.random() < eps:  # exploration
+            action = random.randint(0, environment.action_dims - 1)
+        else:
+            action = torch.multinomial(probs_target, 1).item()
+        next_state, reward, terminated, _ = environment.step(action)
         #must add:
-        #env.render()
+#         env.render()
         states.append(state)
         actions.append(action)
         rewards.append(reward)
         if terminated:
-            break  
-        
+            break
         state = next_state
     return states, actions, rewards
+
 
 task = 'landing'  # 'hover' or 'landing'
 version = 5
 
 max_m_episode = 200000
 max_steps = 800
-     #network and optimizer
 
-    #hyperparameters:
+#hyperparameters:
 alpha = 2.5e-4
 gamma = 0.99
 lmbda         = 0.99
@@ -175,6 +158,7 @@ entropy_coeff = 0.01
 SAVE_INTERVAL = 1000
 mini_batch_size = 64
 env = Rocket(task=task, max_steps=max_steps)
+
 
 
 #create networks:
@@ -230,10 +214,8 @@ while episode < MAX_EPISODES:  # episode loop
     states = np.array(states)
     states = torch.FloatTensor(np.array(states)).to(device)
     actions = torch.LongTensor(actions).to(device)
-    #rewards = torch.FloatTensor(rewards).to(device)
     
     dataset = TensorDataset(states, actions, GAEs, Gs)
-    #dataloader = DataLoader(dataset, batch_size=mini_batch_size)
     dataloader = DataLoader(dataset, batch_size=mini_batch_size, shuffle=True)
     
     episode += 1    
@@ -250,7 +232,6 @@ while episode < MAX_EPISODES:  # episode loop
             actor_target_outputs = pi_target(batch_states)
 
             for t in range(len(batch_states)):
-                #S = batch_states[t]
                 A = batch_actions[t]
                 ratio = actor_outputs[t][A] / actor_target_outputs[t][A]
 
@@ -271,15 +252,8 @@ while episode < MAX_EPISODES:  # episode loop
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
-            # pi_optimizer.zero_grad()
-            # loss1.backward(retain_graph=True)
-            # pi_optimizer.step()
 
-            # V_optimizer.zero_grad()
-            # loss2.backward()
-            # V_optimizer.step()
-            
-    reward_history.append(G)                
+    reward_history.append(G)             
         
     if episode % 20 == 1:
         print('episode id: %d, episode return: %.3f'
@@ -307,5 +281,4 @@ while episode < MAX_EPISODES:  # episode loop
                             'model_pi_state_dict': pi.state_dict(),
                             'model_V_state_dict': V.state_dict(),
                             'optimizer': optimizer.state_dict()},
-                            os.path.join(ckpt_folder, 'ckpt_' + str(SAVE_INTERVAL).zfill(8) + '.pt'))
-
+                            os.path.join(ckpt_folder, 'ckpt_' + str(episode).zfill(8) + '.pt'))
